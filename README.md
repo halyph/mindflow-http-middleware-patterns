@@ -31,15 +31,15 @@ Request → Cache → RateLimitRetry → Retry → HTTP → External API
 
 ## Demo Scenarios
 
-| # | Scenario | What It Shows |
-|---|----------|---------------|
-| 0 | Baseline | Clean successful request (green trace) |
-| 1 | Cache Demo | MISS → HIT - demonstrates cache value |
-| 2 | Retry Demo | 3 attempts [500, 500, 200] with exponential backoff |
-| 3 | Rate Limit Demo | 429 → wait 2s (Retry-After) → retry → 200 |
-| 4 | Rate Limit Exhaustion | 429 → retry → retry → max retries exceeded |
-| 5 | 5xx Retry | RateLimitRetry passes 5xx to Retry middleware |
-| 6 | Timeout Demo | Context timeout - NOT retried (fail fast) |
+| # | Scenario | What It Shows | Diagram |
+|---|----------|---------------|---------|
+| 0 | Baseline | Clean successful request (green trace) | [📊](diagrams/scenario-0-baseline.md) |
+| 1 | Cache Demo | MISS → HIT - demonstrates cache value | [📊](diagrams/scenario-1-cache-demo.md) |
+| 2 | Retry Demo | 3 attempts [500, 500, 200] with exponential backoff | [📊](diagrams/scenario-2-retry-demo.md) |
+| 3 | Rate Limit Demo | 429 → wait 2s (Retry-After) → retry → 200 | [📊](diagrams/scenario-3-ratelimit-demo.md) |
+| 4 | Rate Limit Exhaustion | 429 → retry → retry → max retries exceeded | [📊](diagrams/scenario-4-ratelimit-exhausted.md) |
+| 5 | 5xx Retry | RateLimitRetry passes 5xx to Retry middleware | [📊](diagrams/scenario-5-retry-5xx.md) |
+| 6 | Timeout Demo | Context timeout - NOT retried (fail fast) | [📊](diagrams/scenario-6-timeout-demo.md) |
 
 ## Viewing Traces in Jaeger
 
@@ -65,9 +65,7 @@ middleware/
   ratelimit.go    # 429 handling
   retry.go        # Exponential backoff
 tracer/           # OpenTelemetry setup
-docs/
-  diagrams/       # Mermaid sequence diagrams for each scenario
-  ARCHITECTURE.md # Deep dive into middleware design
+diagrams/         # Mermaid sequence diagrams for each scenario
 ```
 
 ## Commands
@@ -101,10 +99,6 @@ make clean && make up
 - Go 1.25+
 - Docker or Colima (for Jaeger)
 - `make`
-
-## Documentation
-
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Deep dive into middleware design and patterns
 
 ## License
 
