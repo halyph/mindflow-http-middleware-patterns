@@ -94,13 +94,10 @@ func main() {
 	// Scenario 4: Rate limit retry exhaustion (MaxRetries exceeded)
 	scenarioRateLimitExhausted(httpClient, otelTracer)
 
-	// Scenario 5: Combined (cache + rate limit + retry)
-	scenarioCombinedDemo(httpClient, otelTracer)
-
-	// Scenario 6: Cache miss + 5xx error → Retry → Success → Cache
+	// Scenario 5: Cache miss + 5xx error → Retry → Success → Cache
 	scenarioRetryWith5xxDemo(httpClient, otelTracer)
 
-	// Scenario 7: Client timeout demonstration
+	// Scenario 6: Client timeout demonstration
 	scenarioTimeoutDemo(otelTracer)
 
 	// Wait for traces to be exported
@@ -256,51 +253,19 @@ func scenarioRateLimitExhausted(httpClient *http.Client, tracer trace.Tracer) {
 	log.Println()
 }
 
-func scenarioCombinedDemo(httpClient *http.Client, tracer trace.Tracer) {
-	log.Println("📌 Scenario 5: Combined Middleware Demonstration")
-	log.Println("   Shows all middleware working together")
-
-	ctx := context.Background()
-	ctx, span := tracer.Start(ctx, "scenario-5-combined-demo")
-	defer span.End()
-
-	// Use unique URL with scenario ID to avoid cache pollution
-	url := apiBaseURL + "/api/data?scenario=5&delay=100ms"
-
-	log.Println("\n   Request 1: Cache miss, normal request...")
-	start := time.Now()
-	if err := makeRequest(ctx, httpClient, "GET", url); err != nil {
-		log.Printf("   ❌ Error: %v\n", err)
-	} else {
-		log.Printf("   ✅ Success (took %dms)\n", time.Since(start).Milliseconds())
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	log.Println("\n   Request 2: Cache hit, instant response...")
-	start = time.Now()
-	if err := makeRequest(ctx, httpClient, "GET", url); err != nil {
-		log.Printf("   ❌ Error: %v\n", err)
-	} else {
-		log.Printf("   ✅ Success (took %dms) - Much faster due to cache!\n", time.Since(start).Milliseconds())
-	}
-
-	log.Println()
-}
-
 func scenarioRetryWith5xxDemo(httpClient *http.Client, tracer trace.Tracer) {
-	log.Println("📌 Scenario 6: Cache MISS → 5xx → Retry → Success → Cache")
+	log.Println("📌 Scenario 5: Cache MISS → 5xx → Retry → Success → Cache")
 	log.Println("   Demonstrates architectural separation: RateLimitRetry silently passes 5xx to Retry")
 	log.Println("   Note: No RateLimitRetry spans in trace (only handles 429)")
 
 	ctx := context.Background()
-	ctx, span := tracer.Start(ctx, "scenario-6-retry-5xx")
+	ctx, span := tracer.Start(ctx, "scenario-5-retry-5xx")
 	defer span.End()
 
 	// Use unique URL with scenario ID to avoid cache pollution
 	// RateLimitRetry will pass 5xx through immediately (no span created)
 	// Retry middleware will handle the 5xx errors with backoff
-	url := apiBaseURL + "/api/data?scenario=6&fail_count=2"
+	url := apiBaseURL + "/api/data?scenario=5&fail_count=2"
 
 	log.Println("\n   Request 1: Cache MISS, will get 5xx errors...")
 	start := time.Now()
@@ -375,12 +340,12 @@ func makeRequest(ctx context.Context, client *http.Client, method, url string) e
 }
 
 func scenarioTimeoutDemo(tracer trace.Tracer) {
-	log.Println("📌 Scenario 7: Client Timeout Demonstration")
+	log.Println("📌 Scenario 6: Client Timeout Demonstration")
 	log.Println("   Tests what happens when http.Client timeout is exceeded")
 	log.Println("   Client timeout: 2s, Server delay: 3s")
 
 	ctx := context.Background()
-	ctx, span := tracer.Start(ctx, "scenario-7-timeout-demo")
+	ctx, span := tracer.Start(ctx, "scenario-6-timeout-demo")
 	defer span.End()
 
 	// Create a client with SHORT timeout (2 seconds) to demonstrate timeout handling
@@ -413,7 +378,7 @@ func scenarioTimeoutDemo(tracer trace.Tracer) {
 	)
 
 	// Server will delay 3 seconds, but client timeout is 2 seconds
-	url := apiBaseURL + "/api/data?scenario=7&delay=3s"
+	url := apiBaseURL + "/api/data?scenario=6&delay=3s"
 
 	log.Println("\n   Request 1: Server delay (3s) > Client timeout (2s)")
 	log.Println("   Expecting: Multiple timeout errors, then failure")

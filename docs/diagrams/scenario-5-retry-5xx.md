@@ -1,4 +1,4 @@
-# Scenario 6: Cache MISS → 5xx → Retry → Success → Cache
+# Scenario 5: Cache MISS → 5xx → Retry → Success → Cache
 
 ```mermaid
 sequenceDiagram
@@ -11,7 +11,7 @@ sequenceDiagram
 
     Note over Client,Server: Request 1: Server fails twice with 5xx
 
-    Client->>Cache: GET /api/data?scenario=6&fail_count=2
+    Client->>Cache: GET /api/data?scenario=5&fail_count=2
     Cache->>Cache: Check cache: MISS
     Cache->>RateLimitRetry: Forward request
 
@@ -42,7 +42,7 @@ sequenceDiagram
 
     Note over Client,Server: Request 2: Same endpoint, Cache HIT!
 
-    Client->>Cache: GET /api/data?scenario=6&fail_count=2
+    Client->>Cache: GET /api/data?scenario=5&fail_count=2
     Cache->>Cache: Check cache: HIT! ⚡
     Cache-->>Client: ✅ 200 OK (1ms)
 

@@ -1,4 +1,4 @@
-# Scenario 7: Client Timeout Demonstration
+# Scenario 6: Client Timeout Demonstration
 
 ```mermaid
 sequenceDiagram
@@ -14,7 +14,7 @@ sequenceDiagram
 
     Note over Client,Server: Attempt 1: Timeout!
 
-    Client->>Cache: GET /api/data?scenario=7&delay=3s
+    Client->>Cache: GET /api/data?scenario=6&delay=3s
     Cache->>RateLimitRetry: Cache MISS
     RateLimitRetry->>Retry: Pass through
     Retry->>Server: HTTP Request (Attempt 1)
@@ -43,7 +43,7 @@ sequenceDiagram
 ## What You'll See in Jaeger
 
 ### Request Trace (ERROR status)
-- **Root span:** `scenario-7-timeout-demo` (red/error)
+- **Root span:** `scenario-6-timeout-demo` (red/error)
 - **Cache span:** `cache.middleware` with `cache.hit=false`
 - **Retry handler:** `retry.middleware` with `retry.total_attempts=1`, `retry.succeeded=false`, `retry.final_error=context_cancelled_or_timeout`
 - **1 Retry attempt span:** Shows:
@@ -142,13 +142,13 @@ There are two types of timeouts:
 ## Expected Output
 
 ```
-📌 Scenario 7: Client Timeout Demonstration
+📌 Scenario 6: Client Timeout Demonstration
    Tests what happens when http.Client timeout is exceeded
    Client timeout: 2s, Server delay: 3s
 
    Request 1: Server delay (3s) > Client timeout (2s)
    Expecting: Multiple timeout errors, then failure
-   ⚠️  Expected timeout failure: request failed: Get "http://localhost:8081/api/data?scenario=7&delay=3s":
+   ⚠️  Expected timeout failure: request failed: Get "http://localhost:8081/api/data?scenario=6&delay=3s":
        request failed due to context cancellation after 1 attempts: context deadline exceeded
    (took 2003ms total - single attempt, no retries)
    Check Jaeger: retry.attempt shows context_cancelled_or_timeout error

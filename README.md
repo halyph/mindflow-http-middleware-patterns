@@ -34,19 +34,19 @@ Request → Cache → RateLimitRetry → Retry → HTTP → External API
 | # | Scenario | What It Shows |
 |---|----------|---------------|
 | 0 | Baseline | Clean successful request (green trace) |
-| 1 | Cache | MISS (100ms) → HIT (0ms) |
-| 2 | Retry | Exponential backoff: 500ms → 1s → success |
-| 3 | Rate Limit Success | 429 → wait 2s → retry → 200 |
-| 4 | Rate Limit Exhaustion | 429 → retry → retry → give up |
-| 5 | Combined | All middleware working together |
-| 6 | 5xx Handling | RateLimitRetry passes 5xx to Retry middleware |
+| 1 | Cache Demo | MISS → HIT - demonstrates cache value |
+| 2 | Retry Demo | 3 attempts [500, 500, 200] with exponential backoff |
+| 3 | Rate Limit Demo | 429 → wait 2s (Retry-After) → retry → 200 |
+| 4 | Rate Limit Exhaustion | 429 → retry → retry → max retries exceeded |
+| 5 | 5xx Retry | RateLimitRetry passes 5xx to Retry middleware |
+| 6 | Timeout Demo | Context timeout - NOT retried (fail fast) |
 
 ## Viewing Traces in Jaeger
 
 1. Open http://localhost:16686
-2. Select service: `mindflow-demo`
+2. Select service: `demo`
 3. Click "Find Traces"
-4. Explore traces named `scenario-0-baseline` through `scenario-6-retry-5xx`
+4. Explore traces named `scenario-0-baseline` through `scenario-6-timeout-demo`
 
 **What to look for:**
 - **Cache spans**: Compare hit (0-1ms) vs miss (100ms+) timing
@@ -65,7 +65,9 @@ middleware/
   ratelimit.go    # 429 handling
   retry.go        # Exponential backoff
 tracer/           # OpenTelemetry setup
-docs/             # Detailed documentation
+docs/
+  diagrams/       # Mermaid sequence diagrams for each scenario
+  ARCHITECTURE.md # Deep dive into middleware design
 ```
 
 ## Commands
