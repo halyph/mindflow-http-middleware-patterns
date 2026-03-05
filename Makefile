@@ -32,6 +32,11 @@ down:
 
 # Run demo (starts API automatically, then runs demo)
 demo: build up
+	@echo "Stopping any existing API instances..."
+	@pkill -f "$(API_BIN)" || true
+	@rm -f $(API_PID)
+	@sleep 1
+
 	@echo "Starting API..."
 	# Run API in background, discard output, save PID to file
 	# $(API_BIN) > /dev/null 2>&1 & - runs API in background, discards stdout/stderr
@@ -41,7 +46,7 @@ demo: build up
 
 	@echo "Running demo..."
 	@$(DEMO_BIN)
-	
+
 	@echo "Stopping API..."
 	@kill $$(cat $(API_PID)) 2>/dev/null || true
 	@rm -f $(API_PID)

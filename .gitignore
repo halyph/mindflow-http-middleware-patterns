@@ -43,5 +43,3 @@ coverage.txt
 node_modules/
 package-lock.json
 
-# Blog assets (generated screenshots/traces)
-blog-assets/
