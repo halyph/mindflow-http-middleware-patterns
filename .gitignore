@@ -38,3 +38,10 @@ coverage.txt
 # Environment
 .env
 .env.local
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Blog assets (generated screenshots/traces)
+blog-assets/

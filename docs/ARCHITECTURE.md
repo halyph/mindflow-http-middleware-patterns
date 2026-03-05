@@ -55,7 +55,7 @@ httpClient := middleware.WrapClient(baseClient,
 
 ### 1. Cache Middleware
 
-**Library:** `jellydator/ttlcache/v2` (production library from dabo)
+**Library:** `jellydator/ttlcache/v2` (production-grade in-memory cache)
 
 **Flow:**
 ```
@@ -99,7 +99,7 @@ Request ──► Next middleware
 
 ### 3. General Retry Middleware
 
-**Library:** `cenkalti/backoff/v4` (production library from dabo)
+**Library:** `cenkalti/backoff/v4` (production-grade backoff library)
 
 **Flow:**
 ```
@@ -181,7 +181,7 @@ Each span includes:
 | Component | Library | Source |
 |-----------|---------|--------|
 | Cache | `jellydator/ttlcache/v2` | pkg/middleware/response_cache.go |
-| Retry Backoff | `cenkalti/backoff/v4` | commit b6881d02 |
+| Retry Backoff | `cenkalti/backoff/v4` | pkg/middleware/retry.go |
 | Response Serialization | `net/http/httputil` | stdlib |
 | Tracing | `go.opentelemetry.io/otel` | standard |
 
@@ -223,7 +223,7 @@ GET /api/data?fail_count=2     # Fail 2 times, then succeed
 
 1. **Composable Middleware** - Each middleware is independent and reusable
 2. **Order Matters** - Cache before retry, rate limit before general retry
-3. **Production Libraries** - Uses same libraries as dabo (ttlcache, cenkalti/backoff)
+3. **Production Libraries** - Uses battle-tested libraries (ttlcache, cenkalti/backoff)
 4. **Full Tracing** - Every middleware creates spans for visibility
 5. **Request Body Buffering** - Retry middleware buffers body for replay
 
