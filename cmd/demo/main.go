@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	serviceName  = "http-client-demo-with-middleware"
+	serviceName  = "mindflow-demo"
 	otlpEndpoint = "localhost:4318" // OTLP endpoint (Jaeger, Grafana, etc)
 	apiBaseURL   = "http://localhost:8081"
 )
@@ -109,7 +109,7 @@ func main() {
 	log.Println(repeat("=", 80))
 	log.Println("\n📊 Open Jaeger UI to see traces:")
 	log.Println("   http://localhost:16686")
-	log.Println("\n   1. Select service: http-client-demo-with-middleware")
+	log.Printf("\n   1. Select service: %s\n", serviceName)
 	log.Println("   2. Click 'Find Traces'")
 	log.Println("   3. Explore traces - you'll see:")
 	log.Println("      - Cache hits and misses")

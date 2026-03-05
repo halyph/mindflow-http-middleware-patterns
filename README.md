@@ -2,181 +2,112 @@
 
 > **Companion code for [mind-flow blog post](https://halyph.github.io/mind-flow/)**
 
-Production-ready HTTP middleware patterns in Go demonstrating composable request/response handling with full distributed tracing.
+Production HTTP middleware demonstrating Cache, RateLimitRetry, and Retry patterns with distributed tracing.
 
-[![Go Version](https://img.shields.io/badge/Go-1.25-blue.svg)](https://go.dev/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
-## 🎯 What This Demonstrates
-
-Three essential middleware patterns working together:
-- **Cache** - Response caching with TTL using [`jellydator/ttlcache`](https://github.com/jellydator/ttlcache)
-- **RateLimitRetry** - HTTP 429 handling with Retry-After header
-- **Retry** - Exponential backoff for 5xx errors using [`cenkalti/backoff`](https://github.com/cenkalti/backoff)
-
-All with **OpenTelemetry distributed tracing** visualized in Jaeger.
-
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# Clone and run
 git clone https://github.com/halyph/http-middleware-patterns-go.git
 cd http-middleware-patterns-go
-
-# Run the demo (starts Jaeger, API, and runs all scenarios)
 make demo
-
-# Open Jaeger UI
 open http://localhost:16686
 ```
 
-That's it! The demo runs 7 scenarios and you can explore traces in Jaeger.
+The `make demo` command automatically builds binaries, starts Jaeger, runs 7 scenarios, and cleans up.
 
-## 📊 Demo Scenarios
+## What This Demonstrates
 
-| # | Scenario | Demonstrates | Trace |
-|---|----------|--------------|-------|
-| **0** | Baseline | Clean successful request | `scenario-0-baseline` |
-| **1** | Cache | MISS → HIT behavior | `scenario-1-cache-demo` |
-| **2** | Retry | Exponential backoff (5xx) | `scenario-2-retry-demo` |
-| **3** | Rate Limit Success | 429 → Retry-After → Success | `scenario-3-ratelimit-demo` |
-| **4** | Rate Limit Exhaustion | MaxRetries exceeded | `scenario-4-ratelimit-exhausted` |
-| **5** | Combined | All middleware together | `scenario-5-combined-demo` |
-| **6** | 5xx → Retry → Cache | Middleware separation | `scenario-6-retry-5xx` |
+**Three middleware patterns:**
+- **Cache** - Response caching with TTL ([`jellydator/ttlcache`](https://github.com/jellydator/ttlcache))
+- **RateLimitRetry** - HTTP 429 handling with Retry-After header
+- **Retry** - Exponential backoff for 5xx errors ([`cenkalti/backoff`](https://github.com/cenkalti/backoff))
 
-## 🔍 What You'll See in Jaeger
-
-### Scenario 3: Rate Limit Success
-```
-scenario-3-ratelimit-demo [2.1s]
-├─ cache.lookup (MISS)
-├─ ratelimit.retry [0ms]
-│  └─ Event: "Received 429"
-│  └─ Event: "Waiting 2s before retry"
-├─ ratelimit.wait [2000ms] ← Visual wait block
-│  └─ Event: "Wait completed"
-└─ cache.lookup (store)
-```
-
-### Scenario 2: Retry with Exponential Backoff
-```
-scenario-2-retry-demo [1.5s]
-├─ retry.attempt (500) [500ms]
-│  └─ Event: "Failed with HTTP 500"
-├─ retry.backoff [500ms] ← Visual backoff
-├─ retry.attempt (500) [500ms]
-├─ retry.backoff [1000ms] ← Doubled!
-└─ retry.attempt (200) [100ms]
-   └─ Event: "Succeeded with status 200"
-```
-
-## 🏗️ Architecture
-
-### Middleware Chain Order
+**Middleware chain order:**
 ```
 Request → Cache → RateLimitRetry → Retry → HTTP → External API
 ```
 
-**Why this order?**
-1. **Cache first** - Skip all work if cached
-2. **RateLimitRetry before Retry** - HTTP 429 has special Retry-After header
-3. **Retry last** - Handles general 5xx errors
+**Why this order?** Cache first (skip work if cached), RateLimitRetry before Retry (429 has special Retry-After header), Retry last (handles general 5xx errors).
 
-### Middleware Responsibilities
+## Demo Scenarios
 
-| Middleware | Handles | Ignores |
-|------------|---------|---------|
-| **Cache** | GET 200 responses | Non-GET, non-200 |
-| **RateLimitRetry** | HTTP 429 only | Everything else (passes through) |
-| **Retry** | 5xx errors, network failures | 429 (already handled), 4xx |
+| # | Scenario | What It Shows |
+|---|----------|---------------|
+| 0 | Baseline | Clean successful request (green trace) |
+| 1 | Cache | MISS (100ms) → HIT (0ms) |
+| 2 | Retry | Exponential backoff: 500ms → 1s → success |
+| 3 | Rate Limit Success | 429 → wait 2s → retry → 200 |
+| 4 | Rate Limit Exhaustion | 429 → retry → retry → give up |
+| 5 | Combined | All middleware working together |
+| 6 | 5xx Handling | RateLimitRetry passes 5xx to Retry middleware |
 
-## 📁 Project Structure
+## Viewing Traces in Jaeger
+
+1. Open http://localhost:16686
+2. Select service: `mindflow-demo`
+3. Click "Find Traces"
+4. Explore traces named `scenario-0-baseline` through `scenario-6-retry-5xx`
+
+**What to look for:**
+- **Cache spans**: Compare hit (0-1ms) vs miss (100ms+) timing
+- **Retry spans**: Multiple attempts with exponential backoff delays
+- **Rate limit spans**: "Retry-After" header with visible wait blocks
+- **Error spans**: Failed attempts highlighted in red
+
+## Project Structure
 
 ```
-.
-├── cmd/
-│   ├── demo/           # Demo scenarios
-│   └── external-api/   # Mock API for testing
-├── middleware/
-│   ├── cache.go        # Response caching (ttlcache)
-│   ├── ratelimit.go    # Rate limit retry (429 handling)
-│   └── retry.go        # General retry (exponential backoff)
-├── tracer/             # OpenTelemetry setup
-├── docs/               # Architecture & guides
-├── docker-compose.yml  # Jaeger
-└── Makefile           # Build & run commands
+cmd/
+  demo/           # Demo scenarios
+  external-api/   # Mock API
+middleware/
+  cache.go        # Response caching
+  ratelimit.go    # 429 handling
+  retry.go        # Exponential backoff
+tracer/           # OpenTelemetry setup
+docs/             # Detailed documentation
 ```
 
-## 🛠️ Available Commands
+## Commands
 
 ```bash
-make build      # Build demo and API binaries
-make demo       # Run complete demo (Jaeger + API + scenarios)
+make demo       # Run complete demo (recommended)
+make build      # Build binaries only
 make up         # Start Jaeger only
 make down       # Stop services
-make test       # Run tests
 make clean      # Clean everything
 ```
 
-## 📖 Documentation
+## Troubleshooting
 
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Deep dive into middleware design
-- **[QUICKSTART.md](docs/QUICKSTART.md)** - Step-by-step walkthrough
-- **[RUNNING.md](RUNNING.md)** - Detailed run instructions
+**Port 8081 already in use:**
+```bash
+lsof -ti:8081 | xargs kill -9
+```
 
-## 🔑 Key Features
+**Jaeger not starting:**
+```bash
+make clean && make up
+```
 
-### Production Libraries
-- ✅ **`jellydator/ttlcache/v2`** - Battle-tested cache (used in production)
-- ✅ **`cenkalti/backoff/v4`** - Industry-standard backoff (used in production)
-- ✅ **OpenTelemetry** - Full distributed tracing
+**No traces in Jaeger:**
+- Wait 10 seconds (traces are batched)
+- Verify Jaeger is accessible at http://localhost:16686
 
-### Trace Visualization
-- ✅ **Child spans** for wait durations (visual blocks in timeline)
-- ✅ **Events** for key decisions ("Received 429", "Cache HIT", etc.)
-- ✅ **Consistent naming** - `middleware.action` pattern
-
-### Middleware Patterns
-- ✅ **Composable** - Each middleware is independent
-- ✅ **Order matters** - Demonstrates correct layering
-- ✅ **Pass-through** - RateLimitRetry silently passes non-429 responses
-- ✅ **Request body buffering** - Retry middleware buffers for replay
-
-## 🎓 Learning Goals
-
-This demo teaches:
-1. **HTTP middleware composition** using `RoundTripper` interface
-2. **Distributed tracing** with OpenTelemetry
-3. **Production patterns** (not toy examples)
-4. **Middleware ordering** and separation of concerns
-5. **Response caching** with TTL
-6. **Rate limit handling** with Retry-After
-7. **Exponential backoff** for retry strategies
-
-## 🔧 Requirements
+## Requirements
 
 - Go 1.25+
 - Docker or Colima (for Jaeger)
 - `make`
 
-## 📝 Blog Post
+## Documentation
 
-Read the full blog post for detailed explanations:
-**[HTTP Middleware Patterns in Go](https://halyph.github.io/mind-flow/)** (coming soon)
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Deep dive into middleware design and patterns
 
-## 🤝 Contributing
+## License
 
-This is a blog demo project. Feel free to:
-- Open issues for bugs or unclear documentation
-- Fork and experiment
-- Share feedback via blog comments
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file
+MIT License - see [LICENSE](LICENSE)
 
 ---
 
-**Made with ❤️ by [Orest Ivasiv](https://github.com/halyph)**
-
-Part of the [mind-flow](https://halyph.github.io/mind-flow/) blog series on production Go patterns.
+**[Orest Ivasiv](https://github.com/halyph)** | Part of [mind-flow](https://halyph.github.io/mind-flow/) blog series

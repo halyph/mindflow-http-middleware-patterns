@@ -237,4 +237,4 @@ GET /api/data?fail_count=2     # Fail 2 times, then succeed
 
 ---
 
-See [../RUNNING.md](../RUNNING.md) to run the demo and view traces in Jaeger.
+See [../README.md](../README.md) to run the demo and view traces in Jaeger.
