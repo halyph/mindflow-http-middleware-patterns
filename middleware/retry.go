@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,7 +62,7 @@ func Retry(config RetryConfig) Middleware {
 // RoundTrip implements the RoundTripper interface with retry logic.
 func (r *retryMiddleware) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-	_, rootSpan := r.tracer.Start(ctx, "retry.handler")
+	ctx, rootSpan := r.tracer.Start(ctx, "retry.middleware")
 	defer rootSpan.End()
 
 	// Check if method is idempotent (safe to retry)
@@ -128,6 +130,31 @@ func (r *retryMiddleware) RoundTrip(req *http.Request) (*http.Response, error) {
 		// Request failed
 		lastErr = err
 		lastResp = resp
+
+		// Check if error is due to context cancellation (e.g., http.Client.Timeout)
+		// Context errors should NOT be retried since the context is already cancelled
+		if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			attemptSpan.AddEvent("Request failed due to context cancellation/timeout - not retryable", trace.WithAttributes(
+				attribute.String("error", err.Error()),
+			))
+			attemptSpan.RecordError(err)
+			attemptSpan.SetAttributes(
+				attribute.String("retry.failure_reason", fmt.Sprintf("context_error: %v", err)),
+				attribute.Bool("retry.failed", true),
+				attribute.String("retry.error", "context_cancelled_or_timeout"),
+			)
+			attemptSpan.SetStatus(codes.Error, "context cancelled or timeout")
+			attemptSpan.End()
+
+			rootSpan.SetAttributes(
+				attribute.Int("retry.total_attempts", attempt+1),
+				attribute.Bool("retry.succeeded", false),
+				attribute.String("retry.final_error", "context_cancelled_or_timeout"),
+			)
+			rootSpan.SetStatus(codes.Error, "context cancelled or timeout")
+
+			return nil, fmt.Errorf("request failed due to context cancellation after %d attempts: %w", attempt+1, err)
+		}
 
 		// Determine failure reason
 		var failureReason string

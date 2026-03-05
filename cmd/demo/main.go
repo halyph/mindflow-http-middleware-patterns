@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	serviceName  = "mindflow-demo"
+	serviceName  = "demo"
 	otlpEndpoint = "localhost:4318" // OTLP endpoint (Jaeger, Grafana, etc)
 	apiBaseURL   = "http://localhost:8081"
 )
@@ -99,6 +99,9 @@ func main() {
 
 	// Scenario 6: Cache miss + 5xx error → Retry → Success → Cache
 	scenarioRetryWith5xxDemo(httpClient, otelTracer)
+
+	// Scenario 7: Client timeout demonstration
+	scenarioTimeoutDemo(otelTracer)
 
 	// Wait for traces to be exported
 	log.Println("\n⏳ Waiting for traces to be exported to Jaeger...")
@@ -369,6 +372,61 @@ func makeRequest(ctx context.Context, client *http.Client, method, url string) e
 
 	span.SetStatus(codes.Ok, "success")
 	return nil
+}
+
+func scenarioTimeoutDemo(tracer trace.Tracer) {
+	log.Println("📌 Scenario 7: Client Timeout Demonstration")
+	log.Println("   Tests what happens when http.Client timeout is exceeded")
+	log.Println("   Client timeout: 2s, Server delay: 3s")
+
+	ctx := context.Background()
+	ctx, span := tracer.Start(ctx, "scenario-7-timeout-demo")
+	defer span.End()
+
+	// Create a client with SHORT timeout (2 seconds) to demonstrate timeout handling
+	shortTimeoutClient := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+
+	// Wrap with middleware (retry will attempt to retry timeouts)
+	otelTracer := otel.Tracer(serviceName)
+	httpClient := middleware.WrapClient(shortTimeoutClient,
+		middleware.Cache(middleware.CacheConfig{
+			TTL:    10 * time.Second,
+			Tracer: otelTracer,
+		}),
+		middleware.RateLimitRetry(middleware.RateLimitRetryConfig{
+			MaxRetries:        2,
+			MaxRetryAfterWait: 10 * time.Second,
+			DefaultRetryAfter: 2 * time.Second,
+			Tracer:            otelTracer,
+		}),
+		middleware.Retry(middleware.RetryConfig{
+			MaxRetries: 3,
+			Backoff: middleware.NewExponentialBackoff(
+				500*time.Millisecond,
+				5*time.Second,
+				30*time.Second,
+			),
+			Tracer: otelTracer,
+		}),
+	)
+
+	// Server will delay 3 seconds, but client timeout is 2 seconds
+	url := apiBaseURL + "/api/data?scenario=7&delay=3s"
+
+	log.Println("\n   Request 1: Server delay (3s) > Client timeout (2s)")
+	log.Println("   Expecting: Multiple timeout errors, then failure")
+	start := time.Now()
+	if err := makeRequest(ctx, httpClient, "GET", url); err != nil {
+		log.Printf("   ⚠️  Expected timeout failure: %v\n", err)
+		log.Printf("   (took %dms total - includes retry attempts)\n", time.Since(start).Milliseconds())
+		log.Println("   Check Jaeger: Each retry.attempt shows context deadline exceeded")
+	} else {
+		log.Printf("   ❌ Unexpected success (took %dms)\n", time.Since(start).Milliseconds())
+	}
+
+	log.Println()
 }
 
 func repeat(s string, count int) string {

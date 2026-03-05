@@ -49,6 +49,8 @@ func RateLimitRetry(config RateLimitRetryConfig) Middleware {
 // RoundTrip implements the RoundTripper interface with rate limit retry logic.
 func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
+	ctx, rootSpan := r.tracer.Start(ctx, "ratelimit.middleware")
+	defer rootSpan.End()
 
 	// Buffer request body if present (needed for retries)
 	var bodyBytes []byte
@@ -61,6 +63,8 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 		req.Body.Close()
 		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
+
+	rateLimitCount := 0
 
 	// Attempt the request with retries
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
@@ -77,11 +81,17 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 
 		// If not a rate limit error, return immediately
 		if resp.StatusCode != http.StatusTooManyRequests {
+			rootSpan.SetAttributes(
+				attribute.Int("ratelimit.total_429s", rateLimitCount),
+				attribute.Bool("ratelimit.triggered", rateLimitCount > 0),
+			)
 			return resp, nil
 		}
 
+		rateLimitCount++
+
 		// We got a 429 - handle rate limit
-		_, span := r.tracer.Start(ctx, "ratelimit.retry")
+		_, span := r.tracer.Start(ctx, "ratelimit.attempt")
 		span.SetAttributes(
 			attribute.Int("ratelimit.attempt", attempt),
 			attribute.Int("ratelimit.max_retries", r.config.MaxRetries),
@@ -114,6 +124,14 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 			span.SetStatus(codes.Error, "max retries exceeded")
 			span.End()
 
+			rootSpan.SetAttributes(
+				attribute.Int("ratelimit.total_429s", rateLimitCount),
+				attribute.Int("ratelimit.total_attempts", attempt+1),
+				attribute.Bool("ratelimit.succeeded", false),
+				attribute.String("ratelimit.final_error", "max_retries_exceeded"),
+			)
+			rootSpan.SetStatus(codes.Error, "max retries exceeded")
+
 			// Drain and close the body before returning
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -143,6 +161,14 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 			span.SetStatus(codes.Error, "retry-after exceeds max wait")
 			span.End()
 
+			rootSpan.SetAttributes(
+				attribute.Int("ratelimit.total_429s", rateLimitCount),
+				attribute.Int("ratelimit.total_attempts", attempt+1),
+				attribute.Bool("ratelimit.succeeded", false),
+				attribute.String("ratelimit.final_error", "retry_after_too_long"),
+			)
+			rootSpan.SetStatus(codes.Error, "retry-after exceeds max wait")
+
 			// Drain and close the body before returning
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -171,6 +197,11 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 	}
 
 	// Should never reach here, but handle it gracefully
+	rootSpan.SetAttributes(
+		attribute.Int("ratelimit.total_429s", rateLimitCount),
+		attribute.String("ratelimit.final_error", "unexpected_exhausted_loop"),
+	)
+	rootSpan.SetStatus(codes.Error, "unexpected: exhausted retry loop")
 	return nil, fmt.Errorf("unexpected: exhausted retry loop")
 }
 

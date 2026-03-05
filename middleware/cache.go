@@ -62,7 +62,7 @@ func Cache(config CacheConfig) Middleware {
 // RoundTrip implements the RoundTripper interface with caching.
 func (c *cacheMiddleware) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-	ctx, span := c.tracer.Start(ctx, "cache.lookup")
+	ctx, span := c.tracer.Start(ctx, "cache.middleware")
 	defer span.End()
 
 	// Only cache GET requests (matches production)
