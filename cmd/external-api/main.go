@@ -1,3 +1,8 @@
+// Package main provides a mock external API server for testing HTTP middleware patterns.
+//
+// This server simulates various failure scenarios including rate limits, server errors,
+// delays, and transient failures to demonstrate resilience patterns like retry logic,
+// circuit breakers, and caching strategies.
 package main
 
 import (
@@ -8,6 +13,14 @@ import (
 	"strconv"
 	"sync"
 	"time"
+)
+
+const (
+	defaultRetryAfter     = "5"
+	defaultRateLimitCount = 1
+	rateLimitLimit        = "100"
+	rateLimitRemaining    = "0"
+	rateLimitResetSeconds = 5
 )
 
 var (
@@ -25,6 +38,10 @@ type ErrorResponse struct {
 	Timestamp string `json:"timestamp"`
 	Attempt   string `json:"attempt,omitempty"`
 }
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
 
 func main() {
 	http.HandleFunc("/api/data", handleData)
@@ -58,110 +75,34 @@ func main() {
 	}
 }
 
+// ============================================================================
+// HTTP Handlers - Main Request Processing
+// ============================================================================
+
 func handleData(w http.ResponseWriter, r *http.Request) {
-	// Log request
 	log.Printf("📥 %s %s %s", r.Method, r.URL.Path, r.URL.RawQuery)
 
-	// Handle delay
-	if delayStr := r.URL.Query().Get("delay"); delayStr != "" {
-		if delay, err := time.ParseDuration(delayStr); err == nil {
-			log.Printf("   ⏱️  Delaying response by %s", delay)
-			time.Sleep(delay)
-		}
+	// Apply delay if specified (non-blocking)
+	handleDelay(r)
+
+	// Try scenario handlers in priority order
+	if handleRateLimit(w, r) {
+		return
+	}
+	if handleServerError(w, r) {
+		return
+	}
+	if handleFailCount(w, r) {
+		return
 	}
 
-	// Handle custom status codes (check BEFORE fail_count for precedence)
-	if statusStr := r.URL.Query().Get("status"); statusStr != "" {
-		status, _ := strconv.Atoi(statusStr)
-
-		switch status {
-		case http.StatusTooManyRequests: // 429
-			retryAfter := r.URL.Query().Get("retry_after")
-			if retryAfter == "" {
-				retryAfter = "5"
-			}
-
-			// Add state tracking (similar to fail_count)
-			key := r.URL.Path + "?" + r.URL.RawQuery
-			countVal, _ := requestCount.LoadOrStore(key, 0)
-			count := countVal.(int)
-
-			// Default: return 429 once (for Scenario 3)
-			// Can be overridden with fail_count_429 parameter
-			failCount429 := 1
-			if failCount429Str := r.URL.Query().Get("fail_count_429"); failCount429Str != "" {
-				failCount429, _ = strconv.Atoi(failCount429Str)
-			}
-
-			if count < failCount429 {
-				requestCount.Store(key, count+1)
-				log.Printf("   🚫 Rate limit - Retry-After: %s (attempt %d/%d)", retryAfter, count+1, failCount429)
-				w.Header().Set("Retry-After", retryAfter)
-				w.Header().Set("X-Rate-Limit-Limit", "100")
-				w.Header().Set("X-Rate-Limit-Remaining", "0")
-				w.Header().Set("X-Rate-Limit-Reset", fmt.Sprintf("%d", time.Now().Add(time.Second*5).Unix()))
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusTooManyRequests)
-				json.NewEncoder(w).Encode(ErrorResponse{
-					Error:     "rate limit exceeded",
-					Timestamp: time.Now().Format(time.RFC3339),
-					Attempt:   fmt.Sprintf("%d/%d", count+1, failCount429),
-				})
-				return
-			}
-			log.Printf("   ✅ Succeeding after %d rate limits", failCount429)
-			// Fall through to success response
-
-		case http.StatusInternalServerError: // 500
-			log.Printf("   ❌ Server error (500)")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(ErrorResponse{
-				Error:     "internal server error",
-				Timestamp: time.Now().Format(time.RFC3339),
-			})
-			return
-		}
-	}
-
-	// Handle fail_count (fail N times with 500, then succeed)
-	if failCountStr := r.URL.Query().Get("fail_count"); failCountStr != "" {
-		failCount, _ := strconv.Atoi(failCountStr)
-		if failCount > 0 {
-			key := r.URL.Path + "?" + r.URL.RawQuery
-			countVal, _ := requestCount.LoadOrStore(key, 0)
-			count := countVal.(int)
-
-			if count < failCount {
-				requestCount.Store(key, count+1)
-				log.Printf("   ❌ Failing (attempt %d/%d)", count+1, failCount)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(ErrorResponse{
-					Error:     "internal server error",
-					Timestamp: time.Now().Format(time.RFC3339),
-					Attempt:   fmt.Sprintf("%d/%d", count+1, failCount),
-				})
-				return
-			}
-			log.Printf("   ✅ Succeeding after %d failures", failCount)
-		}
-	}
-
-	// Success response
-	log.Printf("   ✅ Success (200)")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(Response{
-		Message:   "success",
-		Timestamp: time.Now().Format(time.RFC3339),
-		Status:    http.StatusOK,
-	})
+	// Default: success
+	handleSuccess(w, r)
 }
 
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	metrics := map[string]interface{}{
+	metrics := map[string]any{
 		"uptime": time.Now().Format(time.RFC3339),
 		"status": "healthy",
 	}
@@ -174,4 +115,178 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "healthy",
 	})
+}
+
+// ============================================================================
+// HTTP Handlers - Scenario Handlers
+// ============================================================================
+
+// handleDelay applies a delay if specified in the query parameter.
+// Returns false to allow request processing to continue.
+func handleDelay(r *http.Request) bool {
+	if delayStr := r.URL.Query().Get("delay"); delayStr != "" {
+		if delay, err := time.ParseDuration(delayStr); err == nil {
+			log.Printf("   ⏱️  Delaying response by %s", delay)
+			time.Sleep(delay)
+		}
+	}
+	return false
+}
+
+// handleRateLimit simulates rate limiting with 429 responses.
+// Returns true if the request was handled (429 returned), false otherwise.
+func handleRateLimit(w http.ResponseWriter, r *http.Request) bool {
+	statusStr := r.URL.Query().Get("status")
+	if statusStr == "" {
+		return false
+	}
+
+	status, _ := strconv.Atoi(statusStr)
+	if status != http.StatusTooManyRequests {
+		return false
+	}
+
+	retryAfter := r.URL.Query().Get("retry_after")
+	if retryAfter == "" {
+		retryAfter = defaultRetryAfter
+	}
+
+	// Check if we should still return 429
+	key := buildRequestKey(r)
+	failCount429 := parseIntParam(r.URL.Query(), "fail_count_429", defaultRateLimitCount)
+
+	if shouldFail, currentAttempt, maxAttempts := shouldSimulateFailure(key, failCount429); shouldFail {
+		log.Printf("   🚫 Rate limit - Retry-After: %s (attempt %d/%d)", retryAfter, currentAttempt, maxAttempts)
+		setRateLimitHeaders(w, retryAfter)
+		writeJSONError(w, "rate limit exceeded", fmt.Sprintf("%d/%d", currentAttempt, maxAttempts), http.StatusTooManyRequests)
+		return true
+	}
+
+	log.Printf("   ✅ Succeeding after %d rate limits", failCount429)
+	return false
+}
+
+// handleServerError simulates 500 internal server errors.
+// Returns true if the request was handled (500 returned), false otherwise.
+func handleServerError(w http.ResponseWriter, r *http.Request) bool {
+	statusStr := r.URL.Query().Get("status")
+	if statusStr == "" {
+		return false
+	}
+
+	status, _ := strconv.Atoi(statusStr)
+	if status != http.StatusInternalServerError {
+		return false
+	}
+
+	log.Printf("   ❌ Server error (500)")
+	writeJSONError(w, "internal server error", "", http.StatusInternalServerError)
+	return true
+}
+
+// handleFailCount simulates transient failures that succeed after N attempts.
+// Returns true if an error was written, false to continue processing.
+func handleFailCount(w http.ResponseWriter, r *http.Request) bool {
+	failCountStr := r.URL.Query().Get("fail_count")
+	if failCountStr == "" {
+		return false
+	}
+
+	failCount, _ := strconv.Atoi(failCountStr)
+	if failCount <= 0 {
+		return false
+	}
+
+	key := buildRequestKey(r)
+	if shouldFail, currentAttempt, maxAttempts := shouldSimulateFailure(key, failCount); shouldFail {
+		log.Printf("   ❌ Failing (attempt %d/%d)", currentAttempt, maxAttempts)
+		writeJSONError(w, "internal server error", fmt.Sprintf("%d/%d", currentAttempt, maxAttempts), http.StatusInternalServerError)
+		return true
+	}
+
+	log.Printf("   ✅ Succeeding after %d failures", failCount)
+	return false
+}
+
+// handleSuccess writes a successful JSON response.
+func handleSuccess(w http.ResponseWriter, _ *http.Request) {
+	log.Printf("   ✅ Success (200)")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(Response{
+		Message:   "success",
+		Timestamp: time.Now().Format(time.RFC3339),
+		Status:    http.StatusOK,
+	})
+}
+
+// ============================================================================
+// State Management - Request Tracking
+// ============================================================================
+
+// buildRequestKey creates a unique key for tracking request state.
+func buildRequestKey(r *http.Request) string {
+	return r.URL.Path + "?" + r.URL.RawQuery
+}
+
+// getRequestCount retrieves the current request count for a key.
+func getRequestCount(key string) int {
+	countVal, _ := requestCount.LoadOrStore(key, 0)
+	return countVal.(int)
+}
+
+// incrementRequestCount atomically increments and returns the new count for a key.
+func incrementRequestCount(key string) int {
+	count := getRequestCount(key)
+	newCount := count + 1
+	requestCount.Store(key, newCount)
+	return newCount
+}
+
+// shouldSimulateFailure determines if a failure should be simulated based on attempt count.
+// Returns (shouldFail, currentAttempt, maxAttempts).
+func shouldSimulateFailure(key string, maxCount int) (bool, int, int) {
+	count := getRequestCount(key)
+	if count < maxCount {
+		currentAttempt := incrementRequestCount(key)
+		return true, currentAttempt, maxCount
+	}
+	return false, count, maxCount
+}
+
+// ============================================================================
+// Query Parameter Parsing
+// ============================================================================
+
+// parseIntParam parses an integer query parameter with a default value.
+func parseIntParam(query map[string][]string, key string, defaultValue int) int {
+	if valStr := query[key]; len(valStr) > 0 && valStr[0] != "" {
+		if val, err := strconv.Atoi(valStr[0]); err == nil {
+			return val
+		}
+	}
+	return defaultValue
+}
+
+// ============================================================================
+// HTTP Response Helpers
+// ============================================================================
+
+// writeJSONError writes a JSON error response with optional attempt information.
+func writeJSONError(w http.ResponseWriter, errorMsg string, attempt string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(ErrorResponse{
+		Error:     errorMsg,
+		Timestamp: time.Now().Format(time.RFC3339),
+		Attempt:   attempt,
+	})
+}
+
+// setRateLimitHeaders sets all rate limit related HTTP headers.
+func setRateLimitHeaders(w http.ResponseWriter, retryAfter string) {
+	w.Header().Set("Retry-After", retryAfter)
+	w.Header().Set("X-Rate-Limit-Limit", rateLimitLimit)
+	w.Header().Set("X-Rate-Limit-Remaining", rateLimitRemaining)
+	w.Header().Set("X-Rate-Limit-Reset", fmt.Sprintf("%d", time.Now().Add(time.Second*rateLimitResetSeconds).Unix()))
 }

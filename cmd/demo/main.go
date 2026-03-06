@@ -55,8 +55,8 @@ func main() {
 	httpClient := createHTTPClient(otelTracer, 60*time.Second)
 	log.Println("✅ HTTP client configured with middleware:")
 	log.Println("   1. Cache (TTL: 10s)")
-	log.Println("   2. Rate Limit Retry (max 2 retries, max wait 10s)")
-	log.Println("   3. General Retry (max 3 retries, exponential backoff)")
+	log.Println("   2. Retry (max 3 retries, exponential backoff)")
+	log.Println("   3. Rate Limit Retry (max 2 retries, max wait 10s)")
 
 	// Run scenarios
 	log.Println("\n" + repeat("=", 80))
@@ -108,7 +108,8 @@ func main() {
 // ============================================================================
 
 // createHTTPClient creates an HTTP client with the full middleware chain.
-// Order matters: Cache → RateLimitRetry → Retry
+// Order matters: Cache → Retry → RateLimitRetry
+// Retry is the outer coordinator, RateLimitRetry handles 429s specifically
 func createHTTPClient(tracer trace.Tracer, timeout time.Duration) *http.Client {
 	baseClient := &http.Client{
 		Timeout: timeout,
@@ -119,12 +120,6 @@ func createHTTPClient(tracer trace.Tracer, timeout time.Duration) *http.Client {
 			TTL:    10 * time.Second, // Cache for 10 seconds
 			Tracer: tracer,
 		}),
-		middleware.RateLimitRetry(middleware.RateLimitRetryConfig{
-			MaxRetries:        2,                // Retry up to 2 times
-			MaxRetryAfterWait: 10 * time.Second, // Max wait 10 seconds
-			DefaultRetryAfter: 2 * time.Second,  // Default 2 seconds
-			Tracer:            tracer,
-		}),
 		middleware.Retry(middleware.RetryConfig{
 			MaxRetries: 3, // Retry up to 3 times
 			// Use cenkalti/backoff (matches production!)
@@ -134,6 +129,12 @@ func createHTTPClient(tracer trace.Tracer, timeout time.Duration) *http.Client {
 				30*time.Second,       // Max elapsed time
 			),
 			Tracer: tracer,
+		}),
+		middleware.RateLimitRetry(middleware.RateLimitRetryConfig{
+			MaxRetries:        2,                // Retry up to 2 times
+			MaxRetryAfterWait: 10 * time.Second, // Max wait 10 seconds
+			DefaultRetryAfter: 2 * time.Second,  // Default 2 seconds
+			Tracer:            tracer,
 		}),
 	)
 }
@@ -233,7 +234,7 @@ func scenarioRateLimitExhausted(httpClient *http.Client, tracer trace.Tracer) {
 	// This will exhaust MaxRetries (2) after 3 total attempts
 	url := apiBaseURL + "/api/data?scenario=4&status=429&retry_after=1&fail_count_429=99"
 
-	log.Println("\n   Making request (will exhaust retries)...")
+	log.Println("   ⏳ Making request (will exhaust retries)...")
 	log.Println("   Attempt 1: 429 → Wait 1s")
 	log.Println("   Attempt 2: 429 → Wait 1s (retry 1/2)")
 	log.Println("   Attempt 3: 429 → Wait 1s (retry 2/2)")
@@ -293,7 +294,7 @@ func scenarioTimeoutDemo(tracer trace.Tracer) {
 	// Server will delay 3 seconds, but client timeout is 2 seconds
 	url := apiBaseURL + "/api/data?scenario=6&delay=3s"
 
-	log.Println("\n   Request 1: Server delay (3s) > Client timeout (2s)")
+	log.Println("   ⏳ Request 1: Server delay (3s) > Client timeout (2s)")
 	log.Println("   Expecting: Multiple timeout errors, then failure")
 	start := time.Now()
 	if err := makeRequest(ctx, httpClient, "GET", url); err != nil {
@@ -312,7 +313,7 @@ func scenarioTimeoutDemo(tracer trace.Tracer) {
 // ============================================================================
 
 // makeRequest is the core HTTP request function with OpenTelemetry tracing
-func makeRequest(w context.Context, client *http.Client, method, url string) error {
+func makeRequest(ctx context.Context, client *http.Client, method, url string) error {
 	tracer := otel.Tracer(serviceName)
 	ctx, span := tracer.Start(ctx, "http.request")
 	defer span.End()
@@ -364,7 +365,7 @@ func makeRequest(w context.Context, client *http.Client, method, url string) err
 
 // makeTimedRequest makes an HTTP request and logs the result with timing
 func makeTimedRequest(ctx context.Context, client *http.Client, url, requestDesc, successMsg string) {
-	log.Printf("\n   %s", requestDesc)
+	log.Printf("   ⏳ %s", requestDesc)
 	start := time.Now()
 
 	if err := makeRequest(ctx, client, "GET", url); err != nil {

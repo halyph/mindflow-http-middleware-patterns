@@ -65,6 +65,9 @@ func (r *retryMiddleware) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx, rootSpan := r.tracer.Start(ctx, "retry.middleware")
 	defer rootSpan.End()
 
+	// Update request with new context (for proper span parent-child relationship)
+	req = req.WithContext(ctx)
+
 	// Check if method is idempotent (safe to retry)
 	if !isIdempotent(req.Method) {
 		rootSpan.SetAttributes(
@@ -108,6 +111,33 @@ func (r *retryMiddleware) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		// Make the request
 		resp, err := r.next.RoundTrip(req)
+
+		// Check if this is a non-retryable error (e.g., from exhausted RateLimitRetry)
+		// Without this check, Retry would retry the entire RateLimitRetry flow,
+		// causing retry multiplication (e.g., 4 retry attempts × 3 rate limit attempts = 12 total)
+		if err != nil {
+			var nonRetryableErr *NonRetryableError
+			if errors.As(err, &nonRetryableErr) {
+				attemptSpan.AddEvent("Non-retryable error from upstream middleware - not retrying")
+				attemptSpan.SetAttributes(
+					attribute.Bool("retry.skip", true),
+					attribute.String("retry.skip_reason", "non_retryable_error"),
+				)
+				attemptSpan.RecordError(err)
+				attemptSpan.SetStatus(codes.Error, "non-retryable error")
+				attemptSpan.End()
+
+				rootSpan.SetAttributes(
+					attribute.Int("retry.total_attempts", attempt+1),
+					attribute.Bool("retry.skip", true),
+					attribute.String("retry.skip_reason", "non_retryable_error"),
+				)
+				rootSpan.RecordError(err)
+				rootSpan.SetStatus(codes.Error, "non-retryable error from upstream")
+
+				return resp, err
+			}
+		}
 
 		// Check if request succeeded
 		if err == nil && resp.StatusCode < 500 {

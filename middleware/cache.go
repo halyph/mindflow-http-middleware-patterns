@@ -65,6 +65,9 @@ func (c *cacheMiddleware) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx, span := c.tracer.Start(ctx, "cache.middleware")
 	defer span.End()
 
+	// Update request with new context (for proper span parent-child relationship)
+	req = req.WithContext(ctx)
+
 	// Only cache GET requests (matches production)
 	if req.Method != http.MethodGet {
 		span.SetAttributes(

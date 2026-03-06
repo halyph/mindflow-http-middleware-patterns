@@ -14,6 +14,21 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// NonRetryableError wraps an error to signal that it should not be retried.
+// This is used by middleware to indicate that retry attempts have been exhausted
+// or that the error condition is not suitable for retrying.
+type NonRetryableError struct {
+	Err error
+}
+
+func (e *NonRetryableError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *NonRetryableError) Unwrap() error {
+	return e.Err
+}
+
 // RateLimitRetryConfig holds configuration for rate limit retry middleware.
 type RateLimitRetryConfig struct {
 	MaxRetries        int           // Maximum number of retries (0 = no retries, just fail)
@@ -51,6 +66,9 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 	ctx := req.Context()
 	ctx, rootSpan := r.tracer.Start(ctx, "ratelimit.middleware")
 	defer rootSpan.End()
+
+	// Update request with new context (for proper span parent-child relationship)
+	req = req.WithContext(ctx)
 
 	// Buffer request body if present (needed for retries)
 	var bodyBytes []byte
@@ -136,7 +154,9 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 
-			return resp, fmt.Errorf("rate limit exceeded after %d retries", attempt)
+			return nil, &NonRetryableError{
+				Err: fmt.Errorf("rate limit exceeded after %d retries", attempt),
+			}
 		}
 
 		// Parse Retry-After header
@@ -173,8 +193,10 @@ func (r *rateLimitRetryMiddleware) RoundTrip(req *http.Request) (*http.Response,
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 
-			return resp, fmt.Errorf("retry-after duration (%s) exceeds max wait time (%s)",
-				retryAfter, r.config.MaxRetryAfterWait)
+			return nil, &NonRetryableError{
+				Err: fmt.Errorf("retry-after duration (%s) exceeds max wait time (%s)",
+					retryAfter, r.config.MaxRetryAfterWait),
+			}
 		}
 
 		// Drain and close the response body before retrying
