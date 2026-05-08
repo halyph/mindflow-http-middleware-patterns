@@ -1,6 +1,6 @@
 # HTTP Middleware Patterns in Go
 
-> **Companion code for [mind-flow blog post](https://halyph.github.io/mind-flow/)**
+> **Companion code for [mind-flow blog post](https://halyph.github.io/blog/2026/2026-05-08-go-middleware/)**
 
 Production HTTP middleware demonstrating Cache, RateLimitRetry, and Retry patterns with distributed tracing.
 
@@ -106,4 +106,4 @@ MIT License - see [LICENSE](LICENSE)
 
 ---
 
-**[Orest Ivasiv](https://github.com/halyph)** | Part of [mind-flow](https://halyph.github.io/mind-flow/) blog series
+**[Orest Ivasiv](https://github.com/halyph)** | Part of [mind-flow](https://halyph.github.io/blog/2026/2026-05-08-go-middleware/) blog post.
