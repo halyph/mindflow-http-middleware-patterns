@@ -108,7 +108,3 @@ make clean && make up
 ## License
 
 MIT License - see [LICENSE](LICENSE)
-
----
-
-**[Orest Ivasiv](https://github.com/halyph)** | Part of [mind-flow](https://halyph.github.io/blog/2026/2026-05-08-go-middleware/) blog post.
