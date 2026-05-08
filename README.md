@@ -2,7 +2,7 @@
 
 > **Companion code for [mind-flow blog post](https://halyph.github.io/blog/2026/2026-05-08-go-middleware/)**
 
-Production HTTP middleware demonstrating Cache, RateLimitRetry, and Retry patterns with distributed tracing.
+Demonstration of production-grade HTTP middleware patterns: Cache, RateLimitRetry, and Retry with distributed tracing.
 
 ## Quick Start
 
@@ -24,10 +24,15 @@ The `make demo` command automatically builds binaries, starts Jaeger, runs 7 sce
 
 **Middleware chain order:**
 ```
-Request → Cache → Retry → RateLimitRetry → HTTP → External API
+Request  → Cache → Retry → RateLimitRetry → HTTP Client → External API
+Response ← Cache ← Retry ← RateLimitRetry ← HTTP Client ← External API
 ```
 
-**Why this order?** Cache first (skip work if cached), Retry wraps RateLimitRetry for general failure handling, and RateLimitRetry handles HTTP 429 with Retry-After semantics.
+**Why this order?**
+
+- **Cache** (outermost): Returns cached responses immediately on cache hit, avoiding all downstream work
+- **Retry** (middle): Handles general failures (5xx, network errors) with exponential backoff
+- **RateLimitRetry** (innermost): Specialized handler that ONLY processes *HTTP 429* responses with `Retry-After` semantics (passes everything else through immediately)
 
 ## Demo Scenarios
 
