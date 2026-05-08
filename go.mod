@@ -1,4 +1,4 @@
-module github.com/halyph/http-middleware-patterns
+module github.com/halyph/demo-http-middleware-patterns
 
 go 1.25
 

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/halyph/http-middleware-patterns/middleware"
-	"github.com/halyph/http-middleware-patterns/tracer"
+	"github.com/halyph/demo-http-middleware-patterns/middleware"
+	"github.com/halyph/demo-http-middleware-patterns/tracer"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

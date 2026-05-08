@@ -7,8 +7,8 @@ Production HTTP middleware demonstrating Cache, RateLimitRetry, and Retry patter
 ## Quick Start
 
 ```bash
-git clone https://github.com/halyph/http-middleware-patterns-go.git
-cd http-middleware-patterns-go
+git clone https://github.com/halyph/demo-http-middleware-patterns.git
+cd demo-http-middleware-patterns
 make demo
 open http://localhost:16686
 ```
@@ -24,10 +24,10 @@ The `make demo` command automatically builds binaries, starts Jaeger, runs 7 sce
 
 **Middleware chain order:**
 ```
-Request → Cache → RateLimitRetry → Retry → HTTP → External API
+Request → Cache → Retry → RateLimitRetry → HTTP → External API
 ```
 
-**Why this order?** Cache first (skip work if cached), RateLimitRetry before Retry (429 has special Retry-After header), Retry last (handles general 5xx errors).
+**Why this order?** Cache first (skip work if cached), Retry wraps RateLimitRetry for general failure handling, and RateLimitRetry handles HTTP 429 with Retry-After semantics.
 
 ## Demo Scenarios
 
