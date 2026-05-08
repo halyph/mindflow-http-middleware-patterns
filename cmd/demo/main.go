@@ -93,7 +93,7 @@ func main() {
 	log.Println(repeat("=", 80))
 	log.Println("\n📊 Open Jaeger UI to see traces:")
 	log.Println("   http://localhost:16686")
-	log.Printf("\n   1. Select service: %s\n", serviceName)
+	log.Printf("   1. Select service: %s\n", serviceName)
 	log.Println("   2. Click 'Find Traces'")
 	log.Println("   3. Explore traces - you'll see:")
 	log.Println("      - Cache hits and misses")
